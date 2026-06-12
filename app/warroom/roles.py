@@ -1,8 +1,10 @@
 from dataclasses import dataclass
 
-OPUS = "claude-opus-4-8"
-SONNET = "claude-sonnet-4-6"
 HAIKU = "claude-haiku-4-5"
+# TEMP (cost-saving first run): all agents on Haiku. Revert these two to
+# "claude-opus-4-8" / "claude-sonnet-4-6" for the real recording.
+OPUS = HAIKU
+SONNET = HAIKU
 
 @dataclass(frozen=True)
 class RoleConfig:
