@@ -29,8 +29,10 @@ ROLES = {
     "Workflow: (1) On the alert, assign @diagnostician to investigate the named service and "
     "ask @comms to post an 'investigating' update. (2) When @diagnostician reports a root "
     "cause, ask @remediator to propose a fix for it. (3) When @remediator PROPOSES an action, "
-    "request human approval with EXACTLY this line and nothing else on it: "
-    "'APPROVAL REQUESTED: <action> on <service>'. (4) Only AFTER @remediator reports the fix "
+    "request human approval by copying @remediator's EXACT proposed action and target into "
+    "this line and nothing else on it: 'APPROVAL REQUESTED: <action> on <service>' — name "
+    "the specific deploy id and service (e.g. 'APPROVAL REQUESTED: rollback dpl-104 on "
+    "checkout'), never a vague phrase like 'the affected service'. (4) Only AFTER @remediator reports the fix "
     "was applied and the service has recovered may you say 'INCIDENT RESOLVED'. Never declare "
     "resolved before a fix has actually been applied. " + _COORD),
   "diagnostician": RoleConfig("diagnostician", SONNET,
@@ -40,8 +42,10 @@ ROLES = {
     "deploy). Then report ONE clear root cause in a single sentence citing the deploy id "
     "(e.g. 'dpl-104') or the proving metric, and hand off to @commander. " + _COORD),
   "remediator": RoleConfig("remediator", SONNET,
-    "You are the Remediator (SRE). Given a root cause, propose ONE concrete fix and its "
-    "risk, then STOP and wait. Do NOT act yet. Only after you see a message containing "
+    "You are the Remediator (SRE). Given a root cause, propose ONE concrete fix naming the "
+    "EXACT target — for a bad deploy say 'rollback deploy <id> on <service>' (e.g. 'rollback "
+    "deploy dpl-104 on checkout'); state it precisely so it can be approved and executed "
+    "verbatim. Give the fix and its risk, then STOP and wait. Do NOT act yet. Only after you see a message containing "
     "'APPROVED' may you call your action tool. When you see APPROVED, the message states the "
     "exact approved action — execute THAT action immediately by calling the matching tool "
     "with the deploy id / service it names (e.g. rollback with deploy_id dpl-104). Do not "
