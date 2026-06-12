@@ -13,10 +13,17 @@ OPS = OpsState()
 
 app = FastAPI()
 _events: "asyncio.Queue[dict]" = asyncio.Queue()
+_log: list = []   # full event history (for observability / polling)
 _pending = {"pending": False, "action": None, "service": None}
 
 def emit(event: dict):
+    _log.append(event)
     _events.put_nowait(event)
+
+@app.get("/timeline")
+async def get_timeline():
+    """Full event history — lets us observe the room without watching SSE live."""
+    return {"events": _log}
 
 @app.post("/inject")
 async def inject(req: Request):

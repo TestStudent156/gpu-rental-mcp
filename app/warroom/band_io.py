@@ -98,8 +98,9 @@ class BandAgentAdapter(SimpleAdapter):
                          is_session_bootstrap, room_id):
         self._room.bind(tools, room_id)
         self._dir.update(participants_msg)
-        if is_session_bootstrap:
-            return
+        # NOTE: do NOT skip is_session_bootstrap — Band flags the FIRST message an agent
+        # receives as bootstrap, and that first message is often the real one addressed to
+        # us (e.g. the detector's alert). Skipping it drops the trigger. (Live spike finding.)
         if getattr(msg, "sender_id", None) == self._self_agent_id:
             return  # never react to our own messages
         content = getattr(msg, "content", "") or ""

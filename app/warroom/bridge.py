@@ -38,7 +38,9 @@ class BridgeAdapter(SimpleAdapter):
                          is_session_bootstrap, room_id):
         self._room.bind(tools, room_id)
         self._dir.update(participants_msg)
-        if is_session_bootstrap:
+        # Mirror every message including the first (bootstrap) one — that's often the
+        # opening alert we want on the timeline. Just skip our own messages.
+        if getattr(msg, "sender_id", None) == self._self_agent_id:
             return
         sender = getattr(msg, "sender_name", None) or getattr(msg, "sender_id", "")
         content = getattr(msg, "content", "") or ""
