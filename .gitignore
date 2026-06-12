@@ -2,3 +2,11 @@ node_modules/
 dist/
 .env
 *.log
+
+# Secrets — never commit
+agent_config.yaml
+app/agent_config.yaml
+app/.env
+.venv/
+app/.venv/
+__pycache__/
