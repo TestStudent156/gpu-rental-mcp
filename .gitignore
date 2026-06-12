@@ -17,3 +17,4 @@ app/logs/
 *.mp4
 _vframes/
 _slides/
+/*.png
