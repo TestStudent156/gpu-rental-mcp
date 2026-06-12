@@ -14,6 +14,7 @@ LIVE-SPIKE UNKNOWNS to confirm with real creds:
     outside on_message. Confirm a cached handle works.
 """
 import asyncio
+from datetime import datetime, timezone, timedelta
 import httpx
 from dotenv import load_dotenv
 from band.core import SimpleAdapter
@@ -30,6 +31,10 @@ class BridgeAdapter(SimpleAdapter):
         self._dir = directory
         self._http = httpx.AsyncClient(base_url=BASE, timeout=10)
         self._last_request = ""  # the action+service text the commander asked approval for
+        # Like the LLM agents: ignore room history replayed on (re)join, so a PRIOR run's
+        # "APPROVAL REQUESTED" can't re-open the gate and old messages don't re-fill the timeline.
+        self._cutoff = datetime.now(timezone.utc) - timedelta(seconds=10)
+        self._seen_ids: set = set()
 
     async def on_started(self, agent_name, agent_description):
         # Start polling for human approval decisions in the background.
@@ -43,6 +48,14 @@ class BridgeAdapter(SimpleAdapter):
         # opening alert we want on the timeline. Just skip our own messages.
         if getattr(msg, "sender_id", None) == self._self_agent_id:
             return
+        created = getattr(msg, "created_at", None)
+        if isinstance(created, datetime) and created < self._cutoff:
+            return  # stale message replayed from a previous run
+        mid = getattr(msg, "id", None)
+        if mid is not None:
+            if mid in self._seen_ids:
+                return  # already mirrored (Band re-delivers backlog on resync)
+            self._seen_ids.add(mid)
         sender = getattr(msg, "sender_name", None) or getattr(msg, "sender_id", "")
         content = getattr(msg, "content", "") or ""
 
