@@ -16,10 +16,22 @@ _events: "asyncio.Queue[dict]" = asyncio.Queue()
 _log: list = []   # full event history (for observability / polling)
 _pending = {"pending": False, "action": None, "service": None}
 # Hard governance gate: remediation actions are refused until a human approves, regardless
-# of what any agent tries. Armed by /approval/decide, consumed by one successful action,
-# reset by a new incident. This makes the human-in-the-loop gate UNSKIPPABLE.
+# of what any agent tries. The gate OPENS deterministically the moment a remediation is
+# attempted-and-blocked (not from any agent's free-text), and on approval the server runs
+# the held action itself — so the APPROVE button and the heal never depend on a small model
+# wording things exactly right.
 _remediation = {"approved": False}
+_blocked_call = {"name": None, "args": None}   # remediation held awaiting human approval
 GATED_ACTIONS = {"rollback", "restart", "scale"}
+
+def _readable_action(name, args):
+    if name == "rollback":
+        return f"rollback {args.get('deploy_id', '?')}"
+    if name == "restart":
+        return f"restart {args.get('service', '?')}"
+    if name == "scale":
+        return f"scale {args.get('service', '?')} to {args.get('replicas', '?')}"
+    return name
 
 def emit(event: dict):
     _log.append(event)
@@ -67,6 +79,8 @@ async def inject(req: Request):
     body = await req.json()
     OPS.ops.inject(body["scenario"])
     _remediation["approved"] = False  # new incident -> remediation must be re-approved
+    _blocked_call.update(name=None, args=None)
+    _pending.update(pending=False, action=None, service=None)
     emit({"type": "incident_injected", "scenario": body["scenario"]})
     return {"ok": True}
 
@@ -78,11 +92,17 @@ async def status():
 async def ops_action(name: str, req: Request):
     args = await req.json()
     # Enforce the human approval gate at the action layer: a remediation can never run until
-    # a human has approved it, no matter what an agent attempts.
+    # a human has approved it. The block itself OPENS the approval gate (so the dashboard's
+    # APPROVE button appears deterministically) and remembers the exact call to run on approve.
     if name in GATED_ACTIONS and not _remediation["approved"]:
+        _blocked_call.update(name=name, args=args)
+        degraded = OPS.ops.get_services_by_status("degraded")
+        if degraded:  # only surface an approval while an incident is actually active
+            _pending.update(pending=True, action=_readable_action(name, args),
+                            service=args.get("service") or degraded[0])
         emit({"type": "action_blocked", "name": name, "args": args})
-        return {"error": "BLOCKED: human approval required before remediation. Propose the "
-                "fix and wait for an APPROVED message.", "blocked": True}
+        return {"error": "BLOCKED: human approval required before remediation. You have "
+                "proposed the fix; it will run once a human approves.", "blocked": True}
     out = dispatch(name, args, OPS.ops)
     emit({"type": "action", "name": name, "result": out})
     if name in GATED_ACTIONS:
@@ -109,11 +129,19 @@ async def approval_pending():
 @app.post("/approval/decide")
 async def approval_decide(req: Request):
     body = await req.json()
-    decision = "APPROVED" if body["approved"] else "REJECTED"
+    approved = bool(body["approved"])
+    decision = "APPROVED" if approved else "REJECTED"
     _pending.update(pending=False)
-    _remediation["approved"] = bool(body["approved"])  # arm the action gate on approval
-    emit({"type": "approval_decided", "decision": decision})
+    _remediation["approved"] = approved
     _pending["last_decision"] = decision
+    emit({"type": "approval_decided", "decision": decision})
+    # On approval, run the held remediation server-side so the fix reliably lands — the heal
+    # never depends on a small model retrying the right tool call after approval.
+    if approved and _blocked_call["name"]:
+        out = dispatch(_blocked_call["name"], _blocked_call["args"] or {}, OPS.ops)
+        emit({"type": "action", "name": _blocked_call["name"], "result": out})
+        _remediation["approved"] = False           # consumed
+        _blocked_call.update(name=None, args=None)
     return {"ok": True, "decision": decision}
 
 @app.get("/approval/last")

@@ -42,15 +42,14 @@ ROLES = {
     "deploy). Then report ONE clear root cause in a single sentence citing the deploy id "
     "(e.g. 'dpl-104') or the proving metric, and hand off to @commander. " + _COORD),
   "remediator": RoleConfig("remediator", SONNET,
-    "You are the Remediator (SRE). Given a root cause, propose ONE concrete fix naming the "
-    "EXACT target — for a bad deploy say 'rollback deploy <id> on <service>' (e.g. 'rollback "
-    "deploy dpl-104 on checkout'); state it precisely so it can be approved and executed "
-    "verbatim. Give the fix and its risk, then STOP and wait. Do NOT act yet. Only after you see a message containing "
-    "'APPROVED' may you call your action tool. When you see APPROVED, the message states the "
-    "exact approved action — execute THAT action immediately by calling the matching tool "
-    "with the deploy id / service it names (e.g. rollback with deploy_id dpl-104). Do not "
-    "re-investigate or change the plan. After the tool returns, report the result to the room "
-    "and hand off to @comms. Never act without explicit approval. " + _COORD,
+    "You are the Remediator (SRE). When given a root cause, IMMEDIATELY call your action tool "
+    "to apply the one correct fix — for a bad deploy, call rollback with the named deploy id "
+    "(e.g. rollback with deploy_id dpl-104). Your action will come back BLOCKED: human "
+    "approval required — that is expected and correct, it means the fix is now queued for a "
+    "human. When you see it blocked, reply to @commander that you have proposed the fix and "
+    "are awaiting human approval. Do NOT claim it is approved or done, and do NOT say "
+    "'APPROVED' yourself. Once a human approves, the fix is applied automatically — then just "
+    "confirm completion and hand off to @comms. " + _COORD,
     requires_approval=True),
   "comms": RoleConfig("comms", HAIKU,
     "You are Comms. When asked, write EXACTLY ONE short stakeholder status sentence that "

@@ -92,14 +92,14 @@ class BridgeAdapter(SimpleAdapter):
                     targets = [self._dir.role_to_handle.get(r) for r in ("remediator", "commander")]
                     targets = [t for t in targets if t]
                     if targets:
-                        # Agent turns are stateless, so the remediator has no memory of what it
-                        # proposed. Echo the exact approved action back so it executes precisely
-                        # that (don't make a small model re-derive the fix from scratch).
-                        if decision == "APPROVED" and self._last_request:
-                            text = (f"@remediator APPROVED by human operator. Execute exactly this "
-                                    f"now via your action tool: {self._last_request}")
+                        # The server applies the approved remediation automatically, so this is
+                        # purely informational: tell the room the human decided, so the
+                        # commander can declare the incident resolved and comms can post it.
+                        if decision == "APPROVED":
+                            text = ("@commander APPROVED by human operator — the remediation "
+                                    "has been applied. @remediator please confirm and hand to @comms.")
                         else:
-                            text = f"@remediator {decision} by human operator"
+                            text = f"@commander REJECTED by human operator — remediation NOT applied."
                         await self._room.send(text, mentions=targets)
             except Exception:
                 pass
