@@ -20,26 +20,36 @@ def emit(event: dict):
     _log.append(event)
     _events.put_nowait(event)
 
-# --- Global single-slot LLM gate -------------------------------------------------
-# The hosted LLM plan allows only one concurrent request (DeepSeek-V4-Pro = 4 units,
-# plan limit = 4). Agents are separate processes, so they serialize their LLM calls
-# through this lease-based gate instead of colliding with 429s. The lease auto-expires
-# so a crashed holder can never deadlock the room.
-_llm_gate = {"held": False, "since": 0.0}
+# --- Global multi-slot LLM gate --------------------------------------------------
+# The hosted LLM plan has a fixed concurrency budget (Featherless: 4 units on Premium).
+# Each model costs N units (1-unit <=15B, 2-unit 24-34B, 4-unit huge). LLM_SLOTS =
+# plan_units // model_units = how many agent calls may run at once. Agents are separate
+# processes, so they share the budget through this lease-based gate instead of colliding
+# with 429s. Leases auto-expire so a crashed holder can never deadlock the room.
+#   1-unit model (Qwen2.5-14B): LLM_SLOTS=4 -> all agents run in parallel.
+#   4-unit model (DeepSeek-V4-Pro): LLM_SLOTS=1 -> strictly serial.
+import os
+LLM_SLOTS = int(os.environ.get("LLM_SLOTS", "4"))
 LLM_LEASE = 90.0
+_leases: "dict[str, float]" = {}   # token -> expiry timestamp
+_lease_seq = {"n": 0}
 
 @app.post("/llm/acquire")
 async def llm_acquire():
     now = time.time()
-    if _llm_gate["held"] and (now - _llm_gate["since"]) < LLM_LEASE:
+    for k in [k for k, exp in _leases.items() if exp < now]:
+        _leases.pop(k, None)
+    if len(_leases) >= LLM_SLOTS:
         return {"granted": False}
-    _llm_gate["held"] = True
-    _llm_gate["since"] = now
-    return {"granted": True}
+    _lease_seq["n"] += 1
+    tok = str(_lease_seq["n"])
+    _leases[tok] = now + LLM_LEASE
+    return {"granted": True, "token": tok}
 
 @app.post("/llm/release")
-async def llm_release():
-    _llm_gate["held"] = False
+async def llm_release(req: Request):
+    body = await req.json()
+    _leases.pop(str(body.get("token", "")), None)
     return {"ok": True}
 
 @app.get("/timeline")

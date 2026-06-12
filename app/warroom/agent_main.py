@@ -35,12 +35,16 @@ async def _create_with_retry(client, **kwargs):
 
 
 async def _gated_create(client, **kwargs):
-    """Acquire the server's single LLM slot, make the call, then release. Agents are separate
-    processes; this gate is how they share the one concurrency unit without colliding."""
+    """Acquire one of the server's LLM slots, make the call, then release it. Agents are
+    separate processes; this gate is how they share the plan's concurrency budget without
+    colliding (LLM_SLOTS = plan_units // model_units)."""
     async with httpx.AsyncClient(base_url=SERVER, timeout=15) as gate:
-        for _ in range(300):  # wait up to ~150s for the slot
+        token = None
+        for _ in range(300):  # wait up to ~150s for a free slot
             try:
-                if (await gate.post("/llm/acquire")).json().get("granted"):
+                r = (await gate.post("/llm/acquire")).json()
+                if r.get("granted"):
+                    token = r.get("token")
                     break
             except Exception:
                 pass
@@ -49,7 +53,7 @@ async def _gated_create(client, **kwargs):
             return await _create_with_retry(client, **kwargs)
         finally:
             try:
-                await gate.post("/llm/release")
+                await gate.post("/llm/release", json={"token": token})
             except Exception:
                 pass
 
@@ -138,14 +142,21 @@ async def main():
             return
         # Band requires >=1 mention. Resolve @tokens in the reply to handles; if the LLM
         # addressed no one, fall back to the commander (or, for the commander, to all agents).
+        # Target the next agent in the workflow; never broadcast to everyone (that wakes all
+        # agents at once and confuses small models with cross-talk).
         if role.name == "commander":
-            fallback = directory.all_agent_handles()
+            fallback = [directory.role_to_handle.get("diagnostician")]
         else:
             fallback = [directory.role_to_handle.get("commander")]
         mentions = directory.mentions_for(reply, fallback=fallback)
         # Band rejects a message that @mentions its own sender ('cannot_mention_self').
         self_handle = directory.role_to_handle.get(role.name)
         mentions = [m for m in mentions if m and m != self_handle]
+        # Always CC the bridge so the dashboard timeline observes the whole conversation. The
+        # bridge only mirrors (no LLM), so this doesn't wake any reasoning agent.
+        bridge_h = directory.role_to_handle.get("bridge")
+        if bridge_h and bridge_h not in mentions and bridge_h != self_handle:
+            mentions = mentions + [bridge_h]
         print(f"[{role.name}] -> {mentions}: {reply[:120]}", flush=True)
         if mentions:
             await tools.send_message(content=reply, mentions=mentions)

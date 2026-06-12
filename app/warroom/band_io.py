@@ -9,6 +9,7 @@ Coordination model (from the live spike):
 """
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone, timedelta
 from typing import Awaitable, Callable, Optional
 from band import Agent
 from band.core import SimpleAdapter
@@ -93,6 +94,11 @@ class BandAgentAdapter(SimpleAdapter):
         self._room = room
         self._handler = handler
         self._dir = directory
+        # Stale-replay cutoff: ignore messages created more than this far before startup.
+        # The grace absorbs clock skew between the Band server and this host so a genuinely
+        # fresh trigger is never mistaken for stale (dropping a real trigger > keeping a stale).
+        self._cutoff = datetime.now(timezone.utc) - timedelta(seconds=10)
+        self._seen_ids: set = set()                    # ignore re-delivered backlog msgs
 
     async def on_message(self, msg, tools, history, participants_msg, contacts_msg, *,
                          is_session_bootstrap, room_id):
@@ -103,6 +109,22 @@ class BandAgentAdapter(SimpleAdapter):
         # us (e.g. the detector's alert). Skipping it drops the trigger. (Live spike finding.)
         if getattr(msg, "sender_id", None) == self._self_agent_id:
             return  # never react to our own messages
+        # Drop messages left over from a PREVIOUS run: on (re)join Band replays room history,
+        # whose created_at predates this process. Without this, old alerts re-trigger cascades.
+        created = getattr(msg, "created_at", None)
+        if isinstance(created, datetime):
+            try:
+                if created < self._cutoff:
+                    return
+            except TypeError:
+                pass
+        # Drop a message we've already handled: Band re-delivers backlog messages on resync
+        # after a WebSocket blip, which would otherwise spawn duplicate LLM turns (and 429s).
+        mid = getattr(msg, "id", None)
+        if mid is not None:
+            if mid in self._seen_ids:
+                return
+            self._seen_ids.add(mid)
         content = getattr(msg, "content", "") or ""
         addressed = (self._self_agent_id in content) or (f"@{self._self_name}" in content.lower())
         if not addressed:

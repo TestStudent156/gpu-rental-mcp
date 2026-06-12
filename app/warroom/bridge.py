@@ -29,6 +29,7 @@ class BridgeAdapter(SimpleAdapter):
         self._room = room
         self._dir = directory
         self._http = httpx.AsyncClient(base_url=BASE, timeout=10)
+        self._last_request = ""  # the action+service text the commander asked approval for
 
     async def on_started(self, agent_name, agent_description):
         # Start polling for human approval decisions in the background.
@@ -56,6 +57,7 @@ class BridgeAdapter(SimpleAdapter):
             try:
                 body = content.split("APPROVAL REQUESTED:", 1)[1].strip()
                 action, _, service = body.partition(" on ")
+                self._last_request = body.rstrip(".").strip()  # remember exactly what was asked
                 await self._http.post("/approval/request", json={
                     "action": action.strip().rstrip(".").strip(),
                     "service": service.strip().rstrip(".").strip(),
@@ -77,8 +79,15 @@ class BridgeAdapter(SimpleAdapter):
                     targets = [self._dir.role_to_handle.get(r) for r in ("remediator", "commander")]
                     targets = [t for t in targets if t]
                     if targets:
-                        await self._room.send(
-                            f"@remediator {decision} by human operator", mentions=targets)
+                        # Agent turns are stateless, so the remediator has no memory of what it
+                        # proposed. Echo the exact approved action back so it executes precisely
+                        # that (don't make a small model re-derive the fix from scratch).
+                        if decision == "APPROVED" and self._last_request:
+                            text = (f"@remediator APPROVED by human operator. Execute exactly this "
+                                    f"now via your action tool: {self._last_request}")
+                        else:
+                            text = f"@remediator {decision} by human operator"
+                        await self._room.send(text, mentions=targets)
             except Exception:
                 pass
 

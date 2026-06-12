@@ -28,7 +28,9 @@ TOOL_SCHEMAS = [
 _READ = {"get_services", "get_metrics", "query_logs", "get_deploys"}
 _ACT = {"rollback", "restart", "scale"}
 ROLE_TOOLS = {
-    "commander": _READ,
+    # Commander coordinates only — no tools, so it can't wander off investigating the wrong
+    # service or echo raw tool output. All investigation is delegated to the diagnostician.
+    "commander": set(),
     "diagnostician": _READ,
     "remediator": _READ | _ACT,
     "comms": set(),
