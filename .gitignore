@@ -12,3 +12,8 @@ app/.venv/
 __pycache__/
 app/logs/
 .vscode/
+
+# media (demo recordings)
+*.mp4
+_vframes/
+_slides/
