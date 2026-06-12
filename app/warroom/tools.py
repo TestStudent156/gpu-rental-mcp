@@ -38,6 +38,28 @@ def tools_for(role: str) -> list[dict]:
     allowed = ROLE_TOOLS.get(role, set())
     return [t for t in TOOL_SCHEMAS if t["name"] in allowed]
 
+def tools_for_openai(role: str) -> list[dict]:
+    """Same per-role subset, but in OpenAI's function-tool shape
+    ({"type":"function","function":{name,description,parameters}})."""
+    return [
+        {"type": "function", "function": {
+            "name": t["name"], "description": t["description"],
+            "parameters": t["input_schema"]}}
+        for t in tools_for(role)
+    ]
+
+def tools_text(role: str) -> str:
+    """Human-readable signature list for the prompt-based tool protocol (used instead of
+    native function-calling, which is unreliable on some OpenAI-compatible providers)."""
+    lines = []
+    for t in tools_for(role):
+        props = t["input_schema"].get("properties", {})
+        req = set(t["input_schema"].get("required", []))
+        params = ", ".join(
+            f"{k}{'' if k in req else '?'}:{v.get('type','any')}" for k, v in props.items())
+        lines.append(f'- {t["name"]}({params}) — {t["description"]}')
+    return "\n".join(lines)
+
 def dispatch(name: str, args: dict, ops) -> dict:
     if name == "get_services": return {"services": ops.get_services()}
     if name == "get_metrics":  return ops.get_metrics(args["service"])

@@ -1,4 +1,4 @@
-import asyncio, json
+import asyncio, json, time
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -19,6 +19,28 @@ _pending = {"pending": False, "action": None, "service": None}
 def emit(event: dict):
     _log.append(event)
     _events.put_nowait(event)
+
+# --- Global single-slot LLM gate -------------------------------------------------
+# The hosted LLM plan allows only one concurrent request (DeepSeek-V4-Pro = 4 units,
+# plan limit = 4). Agents are separate processes, so they serialize their LLM calls
+# through this lease-based gate instead of colliding with 429s. The lease auto-expires
+# so a crashed holder can never deadlock the room.
+_llm_gate = {"held": False, "since": 0.0}
+LLM_LEASE = 90.0
+
+@app.post("/llm/acquire")
+async def llm_acquire():
+    now = time.time()
+    if _llm_gate["held"] and (now - _llm_gate["since"]) < LLM_LEASE:
+        return {"granted": False}
+    _llm_gate["held"] = True
+    _llm_gate["since"] = now
+    return {"granted": True}
+
+@app.post("/llm/release")
+async def llm_release():
+    _llm_gate["held"] = False
+    return {"ok": True}
 
 @app.get("/timeline")
 async def get_timeline():

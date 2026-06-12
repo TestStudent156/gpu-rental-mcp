@@ -1,10 +1,11 @@
 from dataclasses import dataclass
 
-HAIKU = "claude-haiku-4-5"
-# TEMP (cost-saving first run): all agents on Haiku. Revert these two to
-# "claude-opus-4-8" / "claude-sonnet-4-6" for the real recording.
-OPUS = HAIKU
-SONNET = HAIKU
+# Agents run via Featherless AI (OpenAI-compatible endpoint; Band is LLM-agnostic).
+# Endpoint + key come from OPENAI_BASE_URL / OPENAI_API_KEY in .env.
+MODEL = "deepseek-ai/DeepSeek-V4-Pro"
+OPUS = MODEL
+SONNET = MODEL
+HAIKU = MODEL
 
 @dataclass(frozen=True)
 class RoleConfig:
