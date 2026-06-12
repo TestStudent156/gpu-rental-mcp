@@ -15,6 +15,11 @@ app = FastAPI()
 _events: "asyncio.Queue[dict]" = asyncio.Queue()
 _log: list = []   # full event history (for observability / polling)
 _pending = {"pending": False, "action": None, "service": None}
+# Hard governance gate: remediation actions are refused until a human approves, regardless
+# of what any agent tries. Armed by /approval/decide, consumed by one successful action,
+# reset by a new incident. This makes the human-in-the-loop gate UNSKIPPABLE.
+_remediation = {"approved": False}
+GATED_ACTIONS = {"rollback", "restart", "scale"}
 
 def emit(event: dict):
     _log.append(event)
@@ -61,6 +66,7 @@ async def get_timeline():
 async def inject(req: Request):
     body = await req.json()
     OPS.ops.inject(body["scenario"])
+    _remediation["approved"] = False  # new incident -> remediation must be re-approved
     emit({"type": "incident_injected", "scenario": body["scenario"]})
     return {"ok": True}
 
@@ -71,8 +77,16 @@ async def status():
 @app.post("/ops/{name}")
 async def ops_action(name: str, req: Request):
     args = await req.json()
+    # Enforce the human approval gate at the action layer: a remediation can never run until
+    # a human has approved it, no matter what an agent attempts.
+    if name in GATED_ACTIONS and not _remediation["approved"]:
+        emit({"type": "action_blocked", "name": name, "args": args})
+        return {"error": "BLOCKED: human approval required before remediation. Propose the "
+                "fix and wait for an APPROVED message.", "blocked": True}
     out = dispatch(name, args, OPS.ops)
     emit({"type": "action", "name": name, "result": out})
+    if name in GATED_ACTIONS:
+        _remediation["approved"] = False  # one-shot: consume the approval
     return out
 
 @app.post("/timeline")
@@ -97,6 +111,7 @@ async def approval_decide(req: Request):
     body = await req.json()
     decision = "APPROVED" if body["approved"] else "REJECTED"
     _pending.update(pending=False)
+    _remediation["approved"] = bool(body["approved"])  # arm the action gate on approval
     emit({"type": "approval_decided", "decision": decision})
     _pending["last_decision"] = decision
     return {"ok": True, "decision": decision}

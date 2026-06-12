@@ -32,7 +32,9 @@ ROLE_TOOLS = {
     # service or echo raw tool output. All investigation is delegated to the diagnostician.
     "commander": set(),
     "diagnostician": _READ,
-    "remediator": _READ | _ACT,
+    # Remediator only acts (the diagnostician already investigated). Without read tools it
+    # can't wander into investigation and emit malformed tool calls — it proposes, then acts.
+    "remediator": _ACT,
     "comms": set(),
 }
 

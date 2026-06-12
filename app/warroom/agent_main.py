@@ -142,21 +142,26 @@ async def main():
             return
         # Band requires >=1 mention. Resolve @tokens in the reply to handles; if the LLM
         # addressed no one, fall back to the commander (or, for the commander, to all agents).
-        # Target the next agent in the workflow; never broadcast to everyone (that wakes all
-        # agents at once and confuses small models with cross-talk).
-        if role.name == "commander":
-            fallback = [directory.role_to_handle.get("diagnostician")]
-        else:
-            fallback = [directory.role_to_handle.get("commander")]
-        mentions = directory.mentions_for(reply, fallback=fallback)
-        # Band rejects a message that @mentions its own sender ('cannot_mention_self').
         self_handle = directory.role_to_handle.get(role.name)
-        mentions = [m for m in mentions if m and m != self_handle]
-        # Always CC the bridge so the dashboard timeline observes the whole conversation. The
-        # bridge only mirrors (no LLM), so this doesn't wake any reasoning agent.
         bridge_h = directory.role_to_handle.get("bridge")
-        if bridge_h and bridge_h not in mentions and bridge_h != self_handle:
-            mentions = mentions + [bridge_h]
+        if role.name == "comms":
+            # comms is a terminal status sink: post to the dashboard timeline (bridge) ONLY,
+            # never waking another agent. Otherwise comms<->commander ping-pong forever.
+            mentions = [bridge_h] if bridge_h else []
+        else:
+            # Target the next agent in the workflow; never broadcast to everyone (that wakes
+            # all agents at once and confuses small models with cross-talk).
+            if role.name == "commander":
+                fallback = [directory.role_to_handle.get("diagnostician")]
+            else:
+                fallback = [directory.role_to_handle.get("commander")]
+            mentions = directory.mentions_for(reply, fallback=fallback)
+            # Band rejects a message that @mentions its own sender ('cannot_mention_self').
+            mentions = [m for m in mentions if m and m != self_handle]
+            # Always CC the bridge so the dashboard timeline observes the whole conversation.
+            # The bridge only mirrors (no LLM), so it doesn't wake any reasoning agent.
+            if bridge_h and bridge_h not in mentions and bridge_h != self_handle:
+                mentions = mentions + [bridge_h]
         print(f"[{role.name}] -> {mentions}: {reply[:120]}", flush=True)
         if mentions:
             await tools.send_message(content=reply, mentions=mentions)
