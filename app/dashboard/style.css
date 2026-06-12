@@ -1,0 +1,12 @@
+body{font-family:system-ui;margin:0;background:#0f1117;color:#e6e6e6}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 20px;background:#1a1d27}
+#board{display:flex;gap:12px;padding:20px;flex-wrap:wrap}
+.tile{padding:16px;border-radius:10px;min-width:120px;text-align:center;background:#222634}
+.tile.healthy{border:2px solid #2ecc71}
+.tile.degraded{border:2px solid #f1c40f;background:#3a2f10}
+.tile.down{border:2px solid #e74c3c;background:#3a1414}
+#approval{margin:0 20px;padding:16px;background:#2c2030;border-radius:10px}
+button{padding:10px 18px;font-weight:bold;border:0;border-radius:8px;margin-right:8px;cursor:pointer}
+#approve{background:#2ecc71}#reject{background:#e74c3c;color:#fff}
+#timeline{padding:20px}#events{list-style:none;padding:0;max-height:50vh;overflow:auto}
+#events li{padding:6px 0;border-bottom:1px solid #222}

@@ -1,2 +1,14 @@
-<!doctype html><html><head><meta charset="utf-8"><title>War Room</title></head>
-<body><h1>War Room (placeholder — real dashboard in Task 12)</h1></body></html>
+<!doctype html>
+<html><head><meta charset="utf-8"><title>War Room</title>
+<link rel="stylesheet" href="/static/style.css"></head>
+<body>
+  <header><h1>🚨 War Room</h1><span id="mttr">MTTR 00:00</span></header>
+  <section id="board"></section>
+  <section id="approval" hidden>
+    <p id="approval-text"></p>
+    <button id="approve">APPROVE</button>
+    <button id="reject">REJECT</button>
+  </section>
+  <section id="timeline"><h2>Incident timeline</h2><ul id="events"></ul></section>
+  <script src="/static/app.js"></script>
+</body></html>
