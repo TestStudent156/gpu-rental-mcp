@@ -81,6 +81,7 @@ async def inject(req: Request):
     _remediation["approved"] = False  # new incident -> remediation must be re-approved
     _blocked_call.update(name=None, args=None)
     _pending.update(pending=False, action=None, service=None)
+    _log.clear()  # start each incident with a fresh dashboard timeline
     emit({"type": "incident_injected", "scenario": body["scenario"]})
     return {"ok": True}
 
