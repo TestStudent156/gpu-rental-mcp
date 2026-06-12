@@ -10,3 +10,5 @@ button{padding:10px 18px;font-weight:bold;border:0;border-radius:8px;margin-righ
 #approve{background:#2ecc71}#reject{background:#e74c3c;color:#fff}
 #timeline{padding:20px}#events{list-style:none;padding:0;max-height:50vh;overflow:auto}
 #events li{padding:6px 0;border-bottom:1px solid #222}
+#postmortem{margin:0 20px 24px;padding:4px 20px 16px;background:#141a2b;border:1px solid #243047;border-radius:10px}
+#postmortem-body{white-space:pre-wrap;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.5;color:#cdd6e4}

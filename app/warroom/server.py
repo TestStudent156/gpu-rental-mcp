@@ -5,6 +5,8 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from warroom.mockops import MockOps
 from warroom.tools import dispatch
+from warroom.scenarios import SCENARIOS
+from warroom import postmortem
 
 class OpsState:
     def __init__(self): self.ops = MockOps()
@@ -23,6 +25,9 @@ _pending = {"pending": False, "action": None, "service": None}
 _remediation = {"approved": False}
 _blocked_call = {"name": None, "args": None}   # remediation held awaiting human approval
 GATED_ACTIONS = {"rollback", "restart", "scale"}
+# Current incident, for the auto-postmortem (filled on /inject, resolved when the approved
+# remediation lands and the service recovers).
+_incident = {}
 
 def _readable_action(name, args):
     if name == "rollback":
@@ -34,6 +39,7 @@ def _readable_action(name, args):
     return name
 
 def emit(event: dict):
+    event.setdefault("ts", time.time())
     _log.append(event)
     _events.put_nowait(event)
 
@@ -77,12 +83,19 @@ async def get_timeline():
 @app.post("/inject")
 async def inject(req: Request):
     body = await req.json()
-    OPS.ops.inject(body["scenario"])
+    scenario = body["scenario"]
+    OPS.ops.inject(scenario)
     _remediation["approved"] = False  # new incident -> remediation must be re-approved
     _blocked_call.update(name=None, args=None)
     _pending.update(pending=False, action=None, service=None)
     _log.clear()  # start each incident with a fresh dashboard timeline
-    emit({"type": "incident_injected", "scenario": body["scenario"]})
+    sc = SCENARIOS.get(scenario, {})
+    _incident.clear()
+    _incident.update(scenario=scenario, service=sc.get("service", "production"),
+                     severity=sc.get("severity", "critical"), cause=sc.get("cause", ""),
+                     remedy_desc=sc.get("remedy_desc", ""), started_ts=time.time(),
+                     resolved_ts=None)
+    emit({"type": "incident_injected", "scenario": scenario})
     return {"ok": True}
 
 @app.get("/status")
@@ -139,11 +152,21 @@ async def approval_decide(req: Request):
     # On approval, run the held remediation server-side so the fix reliably lands — the heal
     # never depends on a small model retrying the right tool call after approval.
     if approved and _blocked_call["name"]:
+        applied = _readable_action(_blocked_call["name"], _blocked_call["args"] or {})
         out = dispatch(_blocked_call["name"], _blocked_call["args"] or {}, OPS.ops)
         emit({"type": "action", "name": _blocked_call["name"], "result": out})
         _remediation["approved"] = False           # consumed
         _blocked_call.update(name=None, args=None)
+        # Incident resolved if the service recovered -> the auto-postmortem becomes available.
+        if _incident and not OPS.ops.get_services_by_status("degraded"):
+            _incident["resolved_ts"] = time.time()
+            _incident.setdefault("action", applied)
+            emit({"type": "incident_resolved", "action": applied})
     return {"ok": True, "decision": decision}
+
+@app.get("/postmortem")
+async def get_postmortem():
+    return postmortem.build(_incident, _log)
 
 @app.get("/approval/last")
 async def approval_last():

@@ -12,6 +12,7 @@ function fmtEvent(ev) {
   if (ev.type === "action_blocked") return `⛔ BLOCKED ${ev.name} — awaiting human approval`;
   if (ev.type === "approval_request") return `🟡 APPROVAL REQUESTED: ${ev.action} on ${ev.service}`;
   if (ev.type === "approval_decided") return `👤 Human ${ev.decision}`;
+  if (ev.type === "incident_resolved") return `🟢 Incident RESOLVED — ${ev.action}`;
   return JSON.stringify(ev);
 }
 
@@ -49,8 +50,22 @@ async function refreshApproval() {
   }
 }
 
+const postmortem = document.getElementById("postmortem");
+const postmortemBody = document.getElementById("postmortem-body");
+async function refreshPostmortem() {
+  const r = await (await fetch("/postmortem")).json();
+  if (r.ready) {
+    postmortem.hidden = false;
+    postmortemBody.textContent = r.markdown;
+  } else {
+    postmortem.hidden = true;
+  }
+}
+
 async function tick() {
-  try { await Promise.all([refreshBoard(), refreshTimeline(), refreshApproval()]); } catch (e) {}
+  try {
+    await Promise.all([refreshBoard(), refreshTimeline(), refreshApproval(), refreshPostmortem()]);
+  } catch (e) {}
 }
 
 document.getElementById("approve").onclick = () =>

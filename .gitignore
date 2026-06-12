@@ -18,3 +18,4 @@ app/logs/
 _vframes/
 _slides/
 /*.png
+.playwright-mcp/
