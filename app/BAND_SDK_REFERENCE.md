@@ -78,6 +78,29 @@ No confirmed agent-level "send into room X" call was found in introspection. Pla
 (detector alert, approval injection). `tools.create_chatroom` exists if we need to make a room.
 Confirm during the live spike whether a cached `tools` works outside the on_message call.
 
+## ⚡ LIVE SPIKE FINDINGS (2026-06-12, real room — these OVERRIDE guesses above)
+
+1. **`Agent.create` is SYNCHRONOUS.** `agent = Agent.create(...)` — do NOT await it. (`agent.run()` IS async.)
+2. **Custom `SimpleAdapter` subclasses MUST call `super().__init__()`** in their `__init__`,
+   else `on_event` crashes with `AttributeError: ... 'history_converter'`. The base sets
+   `history_converter`, `features`, `agent_name`, `agent_description`.
+3. **`send_message` REQUIRES at least one mention.** With `mentions=[]` it raises
+   `BandToolError("At least one mention is required. Available participants: [...]")`.
+4. **Mentions are HANDLES, format `owner/agentname`** (e.g. `pokeyoke111/commander`); the
+   human user is the bare owner (`pokeyoke111`). Pass them in the `mentions` list (bare,
+   no `@` — matching the SDK's "Available participants" list). Display names do NOT work.
+5. **Inbound mentions render inside `msg.content` as `@[[<uuid>]]`.** So an agent can tell it
+   was addressed by checking whether its own `agent_id` (uuid) appears in `msg.content`.
+6. **`participants_msg`** is populated on the **bootstrap** message (first message in a room)
+   and `None` afterwards — CACHE it. It lists every participant's handle + kind, e.g.
+   `- @pokeyoke111/commander — commander (Agent)` / `- @pokeyoke111 — Fritz Kalle (User)`.
+   Use it to build a {role -> handle} directory.
+7. **`history`** arrives as a `HistoryProvider` (no converter). To feed prior turns to an LLM,
+   implement a `HistoryConverter` or use `band.format_history_for_llm` / `inp.history`.
+8. **Coordination model that follows from 3-6:** an agent should ACT only when its uuid is in
+   the inbound content (it was @mentioned), and when it replies it must @mention its handoff
+   target(s) by handle. This yields clean turn-taking instead of every agent replying to all.
+
 ## Adapters available (band.adapters, lazy-loaded)
 `AnthropicAdapter`, `ClaudeSDKAdapter`, `LangGraphAdapter`, `PydanticAIAdapter`, `CrewAIAdapter`,
 `ParlantAdapter`, `CodexAdapter`, `GeminiAdapter`, `GoogleADKAdapter`, `LettaAdapter`,

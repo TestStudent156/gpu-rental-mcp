@@ -17,15 +17,17 @@ import asyncio
 import httpx
 from dotenv import load_dotenv
 from band.core import SimpleAdapter
-from warroom.band_io import RoomHandle, make_agent
+from warroom.band_io import RoomHandle, Directory, make_agent
 
 BASE = "http://127.0.0.1:8000"
 
 
 class BridgeAdapter(SimpleAdapter):
-    def __init__(self, self_agent_id, room: RoomHandle):
+    def __init__(self, self_agent_id, room: RoomHandle, directory: Directory):
+        super().__init__()  # REQUIRED: base sets history_converter/features/etc.
         self._self_agent_id = self_agent_id
         self._room = room
+        self._dir = directory
         self._http = httpx.AsyncClient(base_url=BASE, timeout=10)
 
     async def on_started(self, agent_name, agent_description):
@@ -35,6 +37,7 @@ class BridgeAdapter(SimpleAdapter):
     async def on_message(self, msg, tools, history, participants_msg, contacts_msg, *,
                          is_session_bootstrap, room_id):
         self._room.bind(tools, room_id)
+        self._dir.update(participants_msg)
         if is_session_bootstrap:
             return
         sender = getattr(msg, "sender_name", None) or getattr(msg, "sender_id", "")
@@ -68,7 +71,12 @@ class BridgeAdapter(SimpleAdapter):
             try:
                 decision = (await self._http.get("/approval/last")).json().get("decision")
                 if decision:
-                    await self._room.send(f"{decision} by human operator", mentions=[])
+                    # Address the remediator (who is waiting on approval) + the commander.
+                    targets = [self._dir.role_to_handle.get(r) for r in ("remediator", "commander")]
+                    targets = [t for t in targets if t]
+                    if targets:
+                        await self._room.send(
+                            f"@remediator {decision} by human operator", mentions=targets)
             except Exception:
                 pass
 
@@ -79,7 +87,8 @@ class BridgeAdapter(SimpleAdapter):
 async def main():
     load_dotenv()
     room = RoomHandle()
-    agent = await make_agent("bridge", lambda aid: BridgeAdapter(aid, room))
+    directory = Directory()
+    agent = await make_agent("bridge", lambda aid: BridgeAdapter(aid, room, directory))
     await agent.run()
 
 

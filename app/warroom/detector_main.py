@@ -17,15 +17,17 @@ import asyncio
 import httpx
 from dotenv import load_dotenv
 from band.core import SimpleAdapter
-from warroom.band_io import RoomHandle, make_agent
+from warroom.band_io import RoomHandle, Directory, make_agent
 from warroom.detector import Detector
 
 BASE = "http://127.0.0.1:8000"
 
 
 class DetectorAdapter(SimpleAdapter):
-    def __init__(self, self_agent_id, room: RoomHandle):
+    def __init__(self, self_agent_id, room: RoomHandle, directory: Directory):
+        super().__init__()  # REQUIRED: base sets history_converter/features/etc.
         self._room = room
+        self._dir = directory
         self._det = Detector()
         self._http = httpx.AsyncClient(base_url=BASE, timeout=10)
 
@@ -34,14 +36,18 @@ class DetectorAdapter(SimpleAdapter):
 
     async def on_message(self, msg, tools, history, participants_msg, contacts_msg, *,
                          is_session_bootstrap, room_id):
-        # Only purpose of receiving messages: capture a room handle for proactive sends.
+        # Capture a room handle (for proactive sends) and the handle directory.
         self._room.bind(tools, room_id)
+        self._dir.update(participants_msg)
 
     async def _loop(self):
         while True:
             await asyncio.sleep(2.0)
             if not self._room.room_id:
                 continue
+            commander = self._dir.role_to_handle.get("commander")
+            if not commander:
+                continue  # wait until we know the commander's handle
             try:
                 services = (await self._http.get("/status")).json()["services"]
             except Exception:
@@ -49,7 +55,7 @@ class DetectorAdapter(SimpleAdapter):
             for a in self._det.poll(services):
                 await self._room.send(
                     f"@commander 🚨 ALERT [{a['severity']}] {a['service']}: {a['reason']}",
-                    mentions=["commander"],
+                    mentions=[commander],
                 )
 
     async def on_cleanup(self, room_id):
@@ -59,7 +65,8 @@ class DetectorAdapter(SimpleAdapter):
 async def main():
     load_dotenv()
     room = RoomHandle()
-    agent = await make_agent("detector", lambda aid: DetectorAdapter(aid, room))
+    directory = Directory()
+    agent = await make_agent("detector", lambda aid: DetectorAdapter(aid, room, directory))
     await agent.run()
 
 

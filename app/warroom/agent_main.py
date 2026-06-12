@@ -4,7 +4,7 @@ import anthropic
 from dotenv import load_dotenv
 from warroom.roles import ROLES
 from warroom.tools import tools_for
-from warroom.band_io import BandAgentAdapter, RoomHandle, make_agent
+from warroom.band_io import BandAgentAdapter, RoomHandle, Directory, make_agent
 
 MAX_TOOL_HOPS = 6
 
@@ -53,14 +53,29 @@ async def main():
     client = anthropic.Anthropic()
     ops_client = HttpOps()
     room = RoomHandle()
+    directory = Directory()
 
-    async def handle(sender, content, tools):
+    async def handle(sender, content, tools, directory):
+        print(f"[{role.name}] <- {sender}: {content[:100]}", flush=True)
         reply = await run_claude_turn(client, role, f"[{sender}] {content}", ops_client)
-        if reply and reply.strip():
-            await tools.send_message(content=reply, mentions=[])
+        if not (reply and reply.strip()):
+            print(f"[{role.name}] (no reply)", flush=True)
+            return
+        # Band requires >=1 mention. Resolve @tokens in the reply to handles; if the LLM
+        # addressed no one, fall back to the commander (or, for the commander, to all agents).
+        if role.name == "commander":
+            fallback = directory.all_agent_handles()
+        else:
+            fallback = [directory.role_to_handle.get("commander")]
+        mentions = directory.mentions_for(reply, fallback=fallback)
+        print(f"[{role.name}] -> {mentions}: {reply[:120]}", flush=True)
+        if mentions:
+            await tools.send_message(content=reply, mentions=mentions)
+        else:
+            print(f"[{role.name}] !! no mentions resolved, message NOT sent", flush=True)
 
     def adapter_factory(self_agent_id):
-        return BandAgentAdapter(self_agent_id, role.name, room, handle)
+        return BandAgentAdapter(self_agent_id, role.name, room, handle, directory)
 
     agent = await make_agent(role.name, adapter_factory)
     await agent.run()
